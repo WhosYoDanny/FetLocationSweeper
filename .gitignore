@@ -140,3 +140,9 @@ vite.config.ts.timestamp-*
 
 # MY ADDITIONS:
 /fetlife-session
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
