@@ -57,7 +57,6 @@ async function main() {
     input: process.stdin,
     output: process.stdout,
   });
-  let baseUrl = "";
   const askQuestion = (query) => {
     return new Promise((resolve) => {
       rl.question(query, (answer) => {
@@ -65,8 +64,15 @@ async function main() {
       });
     });
   };
-  const link = await askQuestion("Enter link: ");
-  baseUrl = link;
+  let links = [];
+  let doneEnteringLinks = false;
+  console.log("Enter your links.");
+  while (!doneEnteringLinks) {
+    console.log("Enter link. When done, type 'done'.");
+    const link = await askQuestion("");
+    if (link !== "done") links.push(link);
+    else doneEnteringLinks = true;
+  }
   // let country = "united-states",
   //   state = "idaho",
   //   city = "";
@@ -82,69 +88,77 @@ async function main() {
   // }
 
   // const locationKey = [country, state, city].filter(Boolean).join("/");
-  const progress = fs.existsSync(PROGRESS_PATH)
-    ? JSON.parse(fs.readFileSync(PROGRESS_PATH))
-    : {};
-  const scrapedPages = progress[baseUrl] || [];
 
   const browser = await puppeteer.launch({
     headless: false,
     userDataDir: "./fetlife-session",
     defaultViewport: null,
   });
+  while (links.length) {
+    let baseUrl = links[0];
+    let linkScraped = false;
+    const progress = fs.existsSync(PROGRESS_PATH)
+      ? JSON.parse(fs.readFileSync(PROGRESS_PATH))
+      : {};
+    const scrapedPages = progress[baseUrl] || [];
 
-  const page = await browser.newPage();
+    const page = await browser.newPage();
 
-  const allData = [];
-  let currentPage = 1;
+    const allData = [];
+    let currentPage = 1;
 
-  const writer = csvWriter({
-    path: OUTPUT_CSV,
-    header: [
-      { id: "name", title: "name" },
-      { id: "profile_url", title: "profile_url" },
-      { id: "age", title: "age" },
-      { id: "gender", title: "gender" },
-      { id: "role", title: "role" },
-      { id: "location", title: "location" },
-      { id: "following_status", title: "following_status" },
-    ],
-    append: fs.existsSync(OUTPUT_CSV),
-  });
+    const writer = csvWriter({
+      path: OUTPUT_CSV,
+      header: [
+        { id: "name", title: "name" },
+        { id: "profile_url", title: "profile_url" },
+        { id: "age", title: "age" },
+        { id: "gender", title: "gender" },
+        { id: "role", title: "role" },
+        { id: "location", title: "location" },
+        { id: "following_status", title: "following_status" },
+      ],
+      append: fs.existsSync(OUTPUT_CSV),
+    });
 
-  while (true) {
-    if (scrapedPages.includes(currentPage)) {
-      console.log(`⏩ Skipping page ${currentPage} (already scraped).`);
+    while (true) {
+      if (scrapedPages.includes(currentPage)) {
+        console.log(`⏩ Skipping page ${currentPage} (already scraped).`);
+        currentPage++;
+        continue;
+      }
+
+      const url = buildUrl(baseUrl, currentPage);
+      console.log(`🌐 Scraping: ${url}`);
+
+      await page.goto(url, { waitUntil: "networkidle2" });
+      await sleep(2000);
+
+      const profiles = await scrapePage(page);
+
+      if (profiles.length === 0) {
+        console.log("🏁 No more profiles found. Scraping complete.");
+        linkScraped = true;
+        break;
+      }
+
+      allData.push(...profiles);
+      scrapedPages.push(currentPage);
+      progress[baseUrl] = scrapedPages;
+      fs.writeFileSync(PROGRESS_PATH, JSON.stringify(progress, null, 2));
+
+      console.log(
+        `✅ Scraped ${profiles.length} profiles on page ${currentPage}`
+      );
+
+      await writer.writeRecords(allData);
+      console.log(`📦 Done. Data written to ${OUTPUT_CSV}`);
       currentPage++;
-      continue;
+      await sleep(1000);
     }
-
-    const url = buildUrl(baseUrl, currentPage);
-    console.log(`🌐 Scraping: ${url}`);
-
-    await page.goto(url, { waitUntil: "networkidle2" });
-    await sleep(2000);
-
-    const profiles = await scrapePage(page);
-
-    if (profiles.length === 0) {
-      console.log("🏁 No more profiles found. Scraping complete.");
-      break;
+    if (linkScraped) {
+      links.shift();
     }
-
-    allData.push(...profiles);
-    scrapedPages.push(currentPage);
-    progress[baseUrl] = scrapedPages;
-    fs.writeFileSync(PROGRESS_PATH, JSON.stringify(progress, null, 2));
-
-    console.log(
-      `✅ Scraped ${profiles.length} profiles on page ${currentPage}`
-    );
-
-    await writer.writeRecords(allData);
-    console.log(`📦 Done. Data written to ${OUTPUT_CSV}`);
-    currentPage++;
-    await sleep(1000);
   }
 
   await browser.close();
