@@ -7,7 +7,9 @@ const PROGRESS_PATH = "./scrape_progress.json";
 const OUTPUT_CSV = "./fetlife_users.csv";
 
 function buildUrl(base, page) {
-  return `${base}?page=${page}`;
+  let querySignifier = "?";
+  if (base.includes("?")) querySignifier = "&";
+  return `${base}${querySignifier}page=${page}`;
 }
 
 function sleep(ms) {
