@@ -1,15 +1,13 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const csvWriter = require("csv-writer").createObjectCsvWriter;
+const readline = require("readline");
 
 const PROGRESS_PATH = "./scrape_progress.json";
 const OUTPUT_CSV = "./fetlife_users.csv";
 
-function buildUrl(country, state, city, page) {
-  const base = "https://fetlife.com/p";
-  const location = [country, state, city].filter(Boolean).join("/");
-  console.log(`${base}/${location}/kinksters?page=${page}`);
-  return `${base}/${location}/kinksters?page=${page}`;
+function buildUrl(base, page) {
+  return `${base}?page=${page}`;
 }
 
 function sleep(ms) {
@@ -53,10 +51,23 @@ async function scrapePage(page) {
 async function main() {
   const args = process.argv.slice(2);
 
-  let baseUrl = "https://fetlife.com/p/united-states/idaho/kinksters";
-  let country = "united-states",
-    state = "idaho",
-    city = "";
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  let baseUrl = "";
+  const askQuestion = (query) => {
+    return new Promise((resolve) => {
+      rl.question(query, (answer) => {
+        resolve(answer);
+      });
+    });
+  };
+  const link = await askQuestion("Enter link: ");
+  baseUrl = link;
+  // let country = "united-states",
+  //   state = "idaho",
+  //   city = "";
 
   // if (args[0]?.startsWith("http")) {
   //   baseUrl = args[0];
@@ -68,11 +79,11 @@ async function main() {
   //   [country, state, city] = args;
   // }
 
-  const locationKey = [country, state, city].filter(Boolean).join("/");
+  // const locationKey = [country, state, city].filter(Boolean).join("/");
   const progress = fs.existsSync(PROGRESS_PATH)
     ? JSON.parse(fs.readFileSync(PROGRESS_PATH))
     : {};
-  const scrapedPages = progress[locationKey] || [];
+  const scrapedPages = progress[baseUrl] || [];
 
   const browser = await puppeteer.launch({
     headless: false,
@@ -106,7 +117,7 @@ async function main() {
       continue;
     }
 
-    const url = buildUrl(country, state, city, currentPage);
+    const url = buildUrl(baseUrl, currentPage);
     console.log(`🌐 Scraping: ${url}`);
 
     await page.goto(url, { waitUntil: "networkidle2" });
@@ -121,7 +132,7 @@ async function main() {
 
     allData.push(...profiles);
     scrapedPages.push(currentPage);
-    progress[locationKey] = scrapedPages;
+    progress[baseUrl] = scrapedPages;
     fs.writeFileSync(PROGRESS_PATH, JSON.stringify(progress, null, 2));
 
     console.log(
