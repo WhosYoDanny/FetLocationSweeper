@@ -24,12 +24,26 @@ async function scrapePage(page) {
       const metaEl = card.querySelector("span.text-sm");
       const locationEl = card.querySelector("div.text-sm.text-gray-300");
       const buttonSpanEl = card.querySelector("button span");
+      const postsEl = card.querySelector("div.text-sm.text-gray-500");
+      let postTypeEls = null;
+      if (postsEl) postTypeEls = postsEl.querySelectorAll("a");
 
       const name = nameEl?.innerText?.trim() || "";
       const profile_url = nameEl?.getAttribute("href") || "";
       const meta = metaEl?.innerText || "";
       const location = locationEl?.innerText?.trim() || "";
       const followingStatus = buttonSpanEl?.innerText || "";
+      let pics = 0;
+      let vids = 0;
+      let writings = 0;
+      if (postTypeEls) {
+        postTypeEls.forEach((element) => {
+          const [count, text] = element.textContent.trim().split(" ");
+          if (text.includes("Pic")) pics = count;
+          else if (text.includes("Vid")) vids = count;
+          else if (text.includes("Writing")) writings = count;
+        });
+      }
 
       const [ageWithGender, ...roleParts] = meta.split(" ");
       const age = parseInt(ageWithGender) || "";
@@ -45,6 +59,9 @@ async function scrapePage(page) {
         role,
         location,
         following_status,
+        pics,
+        vids,
+        writings,
       };
     });
   });
@@ -117,6 +134,9 @@ async function main() {
         { id: "role", title: "role" },
         { id: "location", title: "location" },
         { id: "following_status", title: "following_status" },
+        { id: "pics", title: "pics" },
+        { id: "vids", title: "vids" },
+        { id: "writings", title: "writings" },
       ],
       append: fs.existsSync(OUTPUT_CSV),
     });
@@ -143,16 +163,19 @@ async function main() {
       }
 
       allData.push(...profiles);
+
+      console.log(
+        `- Scraped ${profiles.length} profiles on page ${currentPage}`
+      );
+      await writer.writeRecords(profiles);
+      console.log(`-- Profiles added to ${OUTPUT_CSV}`);
+
       scrapedPages.push(currentPage);
       progress[baseUrl] = scrapedPages;
       fs.writeFileSync(PROGRESS_PATH, JSON.stringify(progress, null, 2));
 
-      console.log(
-        `✅ Scraped ${profiles.length} profiles on page ${currentPage}`
-      );
+      console.log(`--- Scraped Profiles Updated. Moving to next page.`);
 
-      await writer.writeRecords(allData);
-      console.log(`📦 Done. Data written to ${OUTPUT_CSV}`);
       currentPage++;
       await sleep(1000);
     }
