@@ -8,6 +8,7 @@ const OUTPUT_CSV = "./fetlife_users.csv";
 function buildUrl(country, state, city, page) {
   const base = "https://fetlife.com/p";
   const location = [country, state, city].filter(Boolean).join("/");
+  console.log(`${base}/${location}/kinksters?page=${page}`);
   return `${base}/${location}/kinksters?page=${page}`;
 }
 
@@ -22,16 +23,19 @@ async function scrapePage(page) {
       const nameEl = card.querySelector("a.text-red-500");
       const metaEl = card.querySelector("span.text-sm");
       const locationEl = card.querySelector("div.text-sm.text-gray-300");
+      const buttonSpanEl = card.querySelector("button span");
 
       const name = nameEl?.innerText?.trim() || "";
       const profile_url = nameEl?.getAttribute("href") || "";
       const meta = metaEl?.innerText || "";
       const location = locationEl?.innerText?.trim() || "";
+      const followingStatus = buttonSpanEl?.innerText || "";
 
       const [ageWithGender, ...roleParts] = meta.split(" ");
       const age = parseInt(ageWithGender) || "";
       const gender = ageWithGender.replace(age, "") || "";
       const role = roleParts.join(" ") || "";
+      const following_status = followingStatus || "Not Checked";
 
       return {
         name,
@@ -40,7 +44,7 @@ async function scrapePage(page) {
         gender,
         role,
         location,
-        following_status: "Not Checked",
+        following_status,
       };
     });
   });
@@ -49,18 +53,20 @@ async function scrapePage(page) {
 async function main() {
   const args = process.argv.slice(2);
 
-  let baseUrl = "";
-  let country, state, city;
+  let baseUrl = "https://fetlife.com/p/united-states/idaho/kinksters";
+  let country = "united-states",
+    state = "idaho",
+    city = "";
 
-  if (args[0]?.startsWith("http")) {
-    baseUrl = args[0];
-    const [, , , ...parts] = new URL(baseUrl).pathname.split("/");
-    country = parts[0];
-    state = parts[1];
-    city = parts[2] || null;
-  } else {
-    [country, state, city] = args;
-  }
+  // if (args[0]?.startsWith("http")) {
+  //   baseUrl = args[0];
+  //   const [, , , ...parts] = new URL(baseUrl).pathname.split("/");
+  //   country = parts[0];
+  //   state = parts[1];
+  //   city = parts[2] || null;
+  // } else {
+  //   [country, state, city] = args;
+  // }
 
   const locationKey = [country, state, city].filter(Boolean).join("/");
   const progress = fs.existsSync(PROGRESS_PATH)
@@ -72,13 +78,26 @@ async function main() {
     headless: false,
     userDataDir: "./fetlife-session",
     defaultViewport: null,
-    args: ["--start-maximized"],
   });
 
   const page = await browser.newPage();
 
   const allData = [];
   let currentPage = 1;
+
+  const writer = csvWriter({
+    path: OUTPUT_CSV,
+    header: [
+      { id: "name", title: "name" },
+      { id: "profile_url", title: "profile_url" },
+      { id: "age", title: "age" },
+      { id: "gender", title: "gender" },
+      { id: "role", title: "role" },
+      { id: "location", title: "location" },
+      { id: "following_status", title: "following_status" },
+    ],
+    append: fs.existsSync(OUTPUT_CSV),
+  });
 
   while (true) {
     if (scrapedPages.includes(currentPage)) {
@@ -87,7 +106,7 @@ async function main() {
       continue;
     }
 
-    const url = baseUrl || buildUrl(country, state, city, currentPage);
+    const url = buildUrl(country, state, city, currentPage);
     console.log(`🌐 Scraping: ${url}`);
 
     await page.goto(url, { waitUntil: "networkidle2" });
@@ -108,26 +127,12 @@ async function main() {
     console.log(
       `✅ Scraped ${profiles.length} profiles on page ${currentPage}`
     );
+
+    await writer.writeRecords(allData);
+    console.log(`📦 Done. Data written to ${OUTPUT_CSV}`);
     currentPage++;
     await sleep(1000);
   }
-
-  const writer = csvWriter({
-    path: OUTPUT_CSV,
-    header: [
-      { id: "name", title: "name" },
-      { id: "profile_url", title: "profile_url" },
-      { id: "age", title: "age" },
-      { id: "gender", title: "gender" },
-      { id: "role", title: "role" },
-      { id: "location", title: "location" },
-      { id: "following_status", title: "following_status" },
-    ],
-    append: fs.existsSync(OUTPUT_CSV),
-  });
-
-  await writer.writeRecords(allData);
-  console.log(`📦 Done. Data written to ${OUTPUT_CSV}`);
 
   await browser.close();
 }
